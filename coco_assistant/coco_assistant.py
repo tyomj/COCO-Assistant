@@ -71,7 +71,7 @@ class COCO_Assistant():
 
         self.ann_anchors = []
 
-    def merge(self, merge_images=True):
+    def merge(self, merge_images=False, rm_empty_cats=True):
         """
         Function for merging multiple coco datasets
         """
@@ -119,14 +119,21 @@ class COCO_Assistant():
         dst_ann = os.path.join(self.resann_dir, 'merged.json')
 
         print("Merging annotations")
-        for j in tqdm(self.jsonfiles):
+        for index, j in tqdm(enumerate(self.jsonfiles)):
             with open(os.path.join(self.ann_dir, j)) as a:
                 cj = json.load(a)
 
             ind = self.jsonfiles.index(j)
+
+            if not merge_images:
+                subdir_name = self.imgfolders[index]
+                for img in cj['images']:
+                    img['file_name'] = subdir_name + '/' + img['file_name']
+
             # Check if this is the 1st annotation.
             # If it is, continue else modify current annotation
             if ind == 0:
+
                 cann['images'] = cann['images'] + cj['images']
                 cann['annotations'] = cann['annotations'] + cj['annotations']
                 if 'info' in list(cj.keys()):
@@ -182,6 +189,21 @@ class COCO_Assistant():
 
                 last_imid = cann['images'][-1]['id']
                 last_annid = cann['annotations'][-1]['id']
+
+        # do not include categories without any samples
+        if rm_empty_cats:
+            old_categories = cann['categories'].copy()
+            new_categories = []
+            ni = 0
+            for i, cat_dict in enumerate(cann['categories']):
+                cat_samples = [x for x in cann['annotations'] if x['category_id'] == cat_dict['id']]
+                if len(cat_samples) != 0:
+                    ni += 1
+                    new_categories.append({'id': ni, 'name': cat_dict['name'], 'supercategory': ''})
+
+            cmapper = CatRemapper(new_categories, old_categories)
+            _, cann['annotations'] = cmapper.remap(cann['annotations'])
+            cann['categories'] = new_categories 
 
         with open(dst_ann, 'w') as aw:
             json.dump(cann, aw)
